@@ -1,0 +1,54 @@
+---
+title: "matrix"
+output: html_document
+date: "2024-01-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+### setup ----------------------------------------------------------------------
+source("config.R")
+remotes::install_github("frvirard/signatR", auth_token = token)
+
+# library ######################################################################
+lib_lst <- c("dplyr",
+             "purrr",
+             "stringr",
+             "reticulate")
+
+invisible(purrr::walk(lib_lst, library, character.only = TRUE))
+rm(lib_lst)
+
+# functions ####################################################################
+
+# variable #####################################################################
+maf_dr <- file.path(data_dr, "maf")
+```
+
+```{r}
+walk(c("mutect", "strelka"), function(caller){
+  col_select <- c(Project = "project",
+                  Sample = "sample",
+                  Genome = "assembly_version",
+                  chrom = "Chr",
+                  pos_start = "POS",
+                  pos_end = "POS",
+                  ref = "REF",
+                  alt = "ALT")
+  
+  if(caller == "mutect"){
+    col_name <- names(col_select)
+    col_select <- str_replace(col_select, "#CHROM", "Chr")
+    names(col_select) <- col_name
+  }
+  maf_lst <- list.files(file.path(maf_dr), 
+                        pattern = ".maf", 
+                        full.names = TRUE)|>
+    str_subset(caller)
+  
+  walk(maf_lst, signatR::sigpro_matrix, 
+       matrix_path = file.path(data_dr, "sigprofiler/matrix"),
+       col = col_select, clean = FALSE)
+})
+```
+

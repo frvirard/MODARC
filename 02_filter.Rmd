@@ -1,0 +1,75 @@
+---
+title: "filter"
+output: html_document
+date: "2024-01-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+### setup ----------------------------------------------------------------------
+source("config.R")
+remotes::install_github("frvirard/signatR", auth_token = token)
+
+# library ######################################################################
+lib_lst <- c("dplyr",
+             "purrr",
+             "stringr")
+
+invisible(purrr::walk(lib_lst, library, character.only = TRUE))
+rm(lib_lst)
+
+# functions ####################################################################
+
+# variable #####################################################################
+maf_dr <- file.path(data_dr, "maf")
+```
+
+We used VAFer with Jiri to find the more relevant setup. VAFer is providing a setting file. We started from sweet spot and increased the cutoff until reaching a mutation count between 3000.
+
+```{r import mutect data}
+param_file <- "2024-01-19_GWZ_20221025_MODARC_mutect_20221117.maf_settings.tsv"
+maf_file <- "GWZ_20221025_MODARC_mutect_20221117.maf"
+
+param <- vroom::vroom(file.path(data_dr, param_file), show_col_types = FALSE)
+maf <- vroom::vroom(file.path(data_dr, "maf", maf_file), show_col_types = FALSE)
+```
+```{r}
+output_file <- str_replace(maf_file, ".maf$", "_vafer.maf")
+
+if(!file.exists(output_file)){
+  dt <- param|>
+  rename(s = sample, 
+         cn = Cov_N,
+         can = Cov_alt_N,
+         ct = Cov_T,
+         cat = Cov_alt_T)|>
+  pmap_dfr(function(s, cn, 
+                    can, ct, cat, vaf_cutoff, ...){
+    message("oo processing ", s)
+    maf|>
+      filter(FILTER == "PASS")|>
+      filter(avsnp150 == ".")|>
+      filter(sample == s) |>
+      filter(Cov_N >= cn) |>
+      filter(Cov_alt_N <= can)|>
+      filter(Cov_T >= ct)|>
+      filter(Cov_alt_T >= cat)|>
+      filter(VAF_T >= vaf_cutoff)
+  })
+  vroom::vroom_write(dt, file.path(data_dr, "maf",
+                                 "GWZ_20221025_MODARC_mutect_20221117_vafer.maf"))
+}else{
+  message("file detected, skipping ...")
+}
+```
+```{r check mutation count}
+vroom::vroom(file.path(data_dr, "maf",
+                       "GWZ_20221025_MODARC_mutect_20221117_vafer.maf"),
+             show_col_types = FALSE)|>
+  mutate(mut_type = dplyr::case_when(Alt == "-" ~ "INDEL",
+                                     Ref == "-" ~ "INDEL", 
+                                     .default = "SNP"), .after = assembly_version)|>
+  filter(mut_type != "INDEL")|>
+  count(sample)
+```
+
