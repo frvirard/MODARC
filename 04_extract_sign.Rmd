@@ -6,24 +6,30 @@ date: "2024-01-20"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+### setup ----------------------------------------------------------------------
+source("config.R")
+remotes::install_github("frvirard/signatR", auth_token = token)
+
+# library ######################################################################
+lib_lst <- c("dplyr",
+             "purrr",
+             "stringr",
+             "reticulate")
+
+invisible(purrr::walk(lib_lst, library, character.only = TRUE))
+rm(lib_lst)
+
+# functions ####################################################################
+
+# variable #####################################################################
 ```
 
-## R Markdown
+```{r}
+context_lst <- c("SBS96", "SBS288", "SBS384")
+walk(context_lst, function(c){
+  set_lst <- dir(file.path(data_dr, "sigprofiler/matrix"))|>
+  map(signatR::sigpro_extract, context = c, solution_fit = TRUE, compatibility = TRUE)
+})
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
