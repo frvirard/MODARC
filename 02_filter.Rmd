@@ -33,10 +33,11 @@ maf_file <- "GWZ_20221025_MODARC_mutect_20221117.maf"
 param <- vroom::vroom(file.path(data_dr, param_file), show_col_types = FALSE)
 maf <- vroom::vroom(file.path(data_dr, "maf", maf_file), show_col_types = FALSE)
 ```
-```{r}
+
+```{r filter}
 output_file <- str_replace(maf_file, ".maf$", "_vafer.maf")
 
-if(!file.exists(output_file)){
+if(!file.exists(file.path(maf_dr, output_file))){
   dt <- param|>
   rename(s = sample, 
          cn = Cov_N,
@@ -56,12 +57,14 @@ if(!file.exists(output_file)){
       filter(Cov_alt_T >= cat)|>
       filter(VAF_T >= vaf_cutoff)
   })
-  vroom::vroom_write(dt, file.path(data_dr, "maf",
-                                 "GWZ_20221025_MODARC_mutect_20221117_vafer.maf"))
+  vroom::vroom_write(dt, file.path(data_dr, "maf", output_file))
 }else{
   message("file detected, skipping ...")
 }
 ```
+
+Because filtering was based on spectra and total mutation count, I checked the mutation count after filtering.
+
 ```{r check mutation count}
 vroom::vroom(file.path(data_dr, "maf",
                        "GWZ_20221025_MODARC_mutect_20221117_vafer.maf"),
@@ -72,4 +75,45 @@ vroom::vroom(file.path(data_dr, "maf",
   filter(mut_type != "INDEL")|>
   count(sample)
 ```
+
+The result wasn't the one expected after msa fitting. I created another maf with old settings to try understand the origin of the problem.
+Note that there was an error in MORDAC_bak filtering Cov_T cutoff was set to 0 and not 10.
+
+```{r}
+param_file <- "2023-01-06_MODARC_newcall_mutect.maf_settings.tsv"
+maf_file <- "GWZ_20221025_MODARC_mutect_20221117.maf"
+
+param <- vroom::vroom(file.path(data_dr, param_file), show_col_types = FALSE)
+maf <- vroom::vroom(file.path(data_dr, "maf", maf_file), show_col_types = FALSE)
+
+output_file <- str_replace(maf_file, ".maf$", "_vafer_old.maf")
+
+if(!file.exists(file.path(maf_dr, output_file))){
+  dt <- param|>
+  rename(s = sample, 
+         cn = Cov_N,
+         can = Cov_alt_N,
+         ct = Cov_T,
+         cat = Cov_alt_T)|>
+  pmap_dfr(function(s, cn, 
+                    can, ct, cat, vaf_cutoff, ...){
+    message("oo processing ", s)
+    maf|>
+      filter(FILTER == "PASS")|>
+      filter(avsnp150 == ".")|>
+      filter(sample == s) |>
+      filter(Cov_N >= cn) |>
+      filter(Cov_alt_N <= can)|>
+      filter(Cov_T >= ct)|>
+      filter(Cov_alt_T >= cat)|>
+      filter(VAF_T >= vaf_cutoff)
+  })
+  vroom::vroom_write(dt, file.path(data_dr, "maf", output_file))
+}else{
+  message("file detected, skipping ...")
+}
+```
+
+
+
 
