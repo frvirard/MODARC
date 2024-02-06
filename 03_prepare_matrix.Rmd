@@ -51,5 +51,30 @@ walk(c("mutect", "strelka"), function(caller){
        col = col_select, clean = FALSE)
 })
 ```
+KIRC-US : Matrices generated for 362 samples with 93 errors
+RECA-EU : Matrices generated for 422 samples with 2652 errors
 
+```{r}
+dataset_lst <- c("KIRC-US", "RECA-EU")
+
+col_select <- c(Project = "project_code",
+                  Sample = "icgc_specimen_id",
+                  Genome = "assembly_version",
+                  chrom = "chromosome",
+                  pos_start = "chromosome_start",
+                  pos_end = "chromosome_end",
+                  ref = "mutated_from_allele",
+                  alt = "mutated_to_allele")
+  
+walk(dataset_lst, function(set){
+  maf <- list.files(file.path(maf_dr), 
+                        pattern = ".maf", 
+                        full.names = TRUE)|>
+    str_subset(set)
+
+  signatR::sigpro_matrix(maf, 
+       matrix_path = file.path(data_dr, "sigprofiler/matrix"),
+       col = col_select, clean = TRUE)
+})
+```
 
