@@ -29,8 +29,7 @@ signatR::prepare_maf(file.path(file_dr, "vcf"),
                      get_vaf = FALSE)
 
 ## Sample name cleaning --------------------------------------------------------
-maf_lst <- list.files(maf_dr)|>
-  str_subset("wo_intergenic", negate = TRUE)
+maf_lst <- list.files(maf_dr)
 
 walk(maf_lst, function(maf){
   vroom::vroom(file.path(maf_dr, maf), show_col_types = FALSE)|>
@@ -38,11 +37,43 @@ walk(maf_lst, function(maf){
     vroom::vroom_write(file.path(maf_dr, maf))
 })
 
-## create exon only maf --------------------------------------------------------
-# walk(maf_lst, function(maf){
-# vroom::vroom(file.path(maf_dr, maf), show_col_types = FALSE)|>
-#   filter(Func.refGene != "intergenic")|>
-#   vroom::vroom_write(file.path(maf_dr, str_remove(maf, ".maf")|>
-#                                  paste0("_wo_intergenic.maf")))
-# })
+## create a liftover version ---------------------------------------------------
 
+chain <- rtracklayer::import.chain(file.path(file_dr,"hg19ToHg38.over.chain"))
+
+dataset_lst <- c("RECA-EU", "KIRC-US")
+
+walk(dataset_lst, function(set){
+  message("oo Processing ", set)
+  file <- list.files(file_dr, full.names = TRUE)|>
+    str_subset(set)
+  output <- basename(file)|>
+    str_replace(".tsv.gz", "_GRCh38.maf.gz")
+  
+  if(!file.exists(file.path(maf_dr, output))){
+    dt <-  vroom::vroom(file, show_col_types = FALSE)
+    message("converting to GRCh38 genome ...")
+    
+    dt <- dt |>
+      mutate(chromosome = if_else(chromosome == "MT", "M", chromosome))|>
+      mutate(chromosome = paste0("chr", chromosome))|>
+      GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE, 
+                                              ignore.strand = TRUE,
+                                              seqnames.field = "chromosome",
+                                              start.field = "chromosome_start",
+                                              end.field = "chromosome_end")|>
+      rtracklayer::liftOver(chain)|>
+      as_tibble()|>
+      mutate(assembly_version = "GRCh38")|>
+      select(-c(group, group_name, width, strand))|>
+      rename(chromosome = seqnames, 
+             chromosome_start = start, 
+             chromosome_end = end)
+    
+    message("done")
+    
+    vroom::vroom_write(dt, file.path(maf_dr, output))
+  }else{
+    message("file already detected, skipping ...")
+  }
+})
