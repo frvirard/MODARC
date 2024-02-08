@@ -37,43 +37,65 @@ walk(maf_lst, function(maf){
     vroom::vroom_write(file.path(maf_dr, maf))
 })
 
-## create a liftover version ---------------------------------------------------
-
-chain <- rtracklayer::import.chain(file.path(file_dr,"hg19ToHg38.over.chain"))
-
+## RECA-EU KIRC-US -------------------------------------------------------------
+# I downloaded datat from PCAWG ICGC website 20240208
 dataset_lst <- c("RECA-EU", "KIRC-US")
-
 walk(dataset_lst, function(set){
   message("oo Processing ", set)
-  file <- list.files(file_dr, full.names = TRUE)|>
-    str_subset(set)
+  file <- list.files(file.path(file_dr, paste0(set, "_PCAWG")), 
+                     full.names = TRUE)|>
+    str_subset(set)|>
+    str_subset("simple_somatic_mutation.open")
+  
   output <- basename(file)|>
-    str_replace(".tsv.gz", "_GRCh38.maf.gz")
+    str_replace(".tsv.gz", paste0("_", set,"_PCAWG.maf.gz"))
   
   if(!file.exists(file.path(maf_dr, output))){
-    dt <-  vroom::vroom(file, show_col_types = FALSE)
-    message("converting to GRCh38 genome ...")
-    
-    dt <- dt |>
-      mutate(chromosome = if_else(chromosome == "MT", "M", chromosome))|>
-      mutate(chromosome = paste0("chr", chromosome))|>
-      GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE, 
-                                              ignore.strand = TRUE,
-                                              seqnames.field = "chromosome",
-                                              start.field = "chromosome_start",
-                                              end.field = "chromosome_end")|>
-      rtracklayer::liftOver(chain)|>
-      as_tibble()|>
-      mutate(assembly_version = "GRCh38")|>
-      select(-c(group, group_name, width, strand))|>
-      rename(chromosome = seqnames, 
-             chromosome_start = start, 
-             chromosome_end = end)
-    
-    message("done")
-    
-    vroom::vroom_write(dt, file.path(maf_dr, output))
+    vroom::vroom(file, show_col_types = FALSE)|>
+      vroom::vroom_write(file.path(maf_dr, output))
   }else{
     message("file already detected, skipping ...")
   }
 })
+
+## create a liftover version ---------------------------------------------------
+# no longer needed with PCAWG
+
+# chain <- rtracklayer::import.chain(file.path(file_dr,"hg19ToHg38.over.chain"))
+# 
+# dataset_lst <- c("RECA-EU", "KIRC-US")
+# 
+# walk(dataset_lst, function(set){
+#   message("oo Processing ", set)
+#   file <- list.files(file_dr, full.names = TRUE)|>
+#     str_subset(set)
+#   output <- basename(file)|>
+#     str_replace(".tsv.gz", "_GRCh38.maf.gz")
+#   
+#   if(!file.exists(file.path(maf_dr, output))){
+#     dt <-  vroom::vroom(file, show_col_types = FALSE)
+#     message("converting to GRCh38 genome ...")
+#     
+#     dt <- dt |>
+#       mutate(chromosome = if_else(chromosome == "MT", "M", chromosome))|>
+#       mutate(chromosome = paste0("chr", chromosome))|>
+#       GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE, 
+#                                               ignore.strand = TRUE,
+#                                               seqnames.field = "chromosome",
+#                                               start.field = "chromosome_start",
+#                                               end.field = "chromosome_end")|>
+#       rtracklayer::liftOver(chain)|>
+#       as_tibble()|>
+#       mutate(assembly_version = "GRCh38")|>
+#       select(-c(group, group_name, width, strand))|>
+#       rename(chromosome = seqnames, 
+#              chromosome_start = start, 
+#              chromosome_end = end)
+#     
+#     message("done")
+#     
+#     vroom::vroom_write(dt, file.path(maf_dr, output))
+#   }else{
+#     message("file already detected, skipping ...")
+#   }
+# })
