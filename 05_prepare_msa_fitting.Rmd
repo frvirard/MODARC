@@ -1,0 +1,84 @@
+---
+title: "prepare MSA fitting"
+output: html_document
+date: "2024-01-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+### setup ----------------------------------------------------------------------
+source("config.R")
+remotes::install_github("frvirard/signatR", auth_token = token)
+
+# library ######################################################################
+lib_lst <- c("dplyr",
+             "purrr",
+             "stringr",
+             "grid",
+             "patchwork")
+
+invisible(purrr::walk(lib_lst, library, character.only = TRUE))
+rm(lib_lst)
+
+# functions ####################################################################
+
+# variable #####################################################################
+sigpro_path <- file.path(data_dr, "sigprofiler")
+```
+
+I started by comparing denovo signature for all set
+```{r fig.width=20, fig.height= 6}
+set_lst <- dir(file.path(sigpro_path, "sign"))|>
+  str_subset("strelka2", negate = TRUE)
+
+sign_plot <- map(set_lst, function(set){
+  
+  sign_act <- signatR::sigpro_import_sign(set, type = "profile",
+                                        n_sign = 4, 
+                                        analysis = "denovo", 
+                                        context = "SBS288")
+  plot <- signatR::plot_spectra(sign_act, context = "SBS192", render = FALSE)
+  title <- textGrob(set)
+  
+  wrap_elements(title)/wrap_elements(plot)+plot_layout(heights = c(0.1, 0.9))
+})
+wrap_plots(sign_plot)+plot_layout(ncol = 4)
+```
+
+We decided with Jiri to do a first run using solution 4 of Vafer filtering?
+SBS288B was considered as noise and added to SBS40, 5, 1 and 8 with SBS_GA
+```{r}
+sign_dt <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")
+
+signatR::plot_spectra(sign_dt, context = "SBS192")
+
+noise_sign <- sign_dt|>
+  select(MutationType, SBS288B)|>
+  filter(!str_detect(MutationType, "N"))|>
+  mutate(Strand = str_sub(MutationType, 1,1),
+         Type = str_sub(MutationType, 5,7),
+         Subtype = paste0(str_sub(MutationType, 3,3),
+                          str_sub(MutationType, 5,5),
+                          str_sub(MutationType, 9,9)))|>
+      select(Strand, Type, Subtype, SBS_FFPE = SBS288B)|>
+  mutate(SBS_FFPE = SBS_FFPE/sum(SBS_FFPE))
+
+sbs_GA <- vroom::vroom(file.path(file_dr, "MEFh_GA_WX_192.csv"), show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS_GA = MEFh_GA_WX_192)
+
+custom_cosmic <- vroom::vroom(file.path(file_dr, "IARC_custom_SBS_192_signatures.csv"), 
+                              show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS1, SBS5, SBS40, SBS8)
+
+custom_cosmic|>
+  left_join(sbs_GA)|>
+  left_join(noise_sign)|>
+  vroom::vroom_write(file.path(file_dr, "custom_1_5_40_8_FFPE_GA_SBS_192_signatures.csv"), 
+                      delim = ",")
+```
+
+
