@@ -81,4 +81,41 @@ custom_cosmic|>
                       delim = ",")
 ```
 
+with a VAFer filtering less stringent (old version), signature were nearly identical.
+FFPE noise was signature SBS288C.
 
+```{r}
+sign_dt <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer_old",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")
+
+signatR::plot_spectra(sign_dt, context = "SBS192")
+
+FFPE_sign <- "SBS288C"
+
+noise_sign <- sign_dt|>
+  select(MutationType, all_of(FFPE_sign))|>
+  filter(!str_detect(MutationType, "N"))|>
+  mutate(Strand = str_sub(MutationType, 1,1),
+         Type = str_sub(MutationType, 5,7),
+         Subtype = paste0(str_sub(MutationType, 3,3),
+                          str_sub(MutationType, 5,5),
+                          str_sub(MutationType, 9,9)))|>
+      select(Strand, Type, Subtype, SBS_FFPE = FFPE_sign)|>
+  mutate(SBS_FFPE = SBS_FFPE/sum(SBS_FFPE))
+
+sbs_GA <- vroom::vroom(file.path(file_dr, "MEFh_GA_WX_192.csv"), show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS_GA = MEFh_GA_WX_192)
+
+custom_cosmic <- vroom::vroom(file.path(file_dr, "IARC_custom_SBS_192_signatures.csv"), 
+                              show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS1, SBS5, SBS40, SBS8)
+
+custom_cosmic|>
+  left_join(sbs_GA)|>
+  left_join(noise_sign)|>
+  vroom::vroom_write(file.path(file_dr, "custom_1_5_40_8_FFPE_old_GA_SBS_192_signatures.csv"), 
+                      delim = ",")
+```
