@@ -21,27 +21,69 @@ invisible(purrr::walk(lib_lst, library, character.only = TRUE))
 rm(lib_lst)
 
 # functions ####################################################################
+sign_reorder <- function(dt_sign, dt_ref){
+  # add a ncol check between ref and sign
+  # idea is good but not working perfectly
+  sign <- dt_sign|>
+    tibble::column_to_rownames("MutationType") 
+  
+  ref <- dt_ref|>
+    tibble::column_to_rownames("MutationType")
 
+  sign_lst <- colnames(ref)|>
+    set_names()
+  
+  cosine <- map_dfr(sign_lst, function(r){
+    map_dfr(sign_lst, function(s){
+      1-lsa::cosine(sign[[s]], ref[[r]])
+    })
+  })|>
+    as.matrix()
+  
+  #print(cosine)
+
+  order <- RcppHungarian::HungarianSolver(cosine)
+  order <- sign_lst[order$pairs[,2]]
+  
+  #print(order)
+
+  dt_sign <- dt_sign|>
+    select(MutationType, all_of(order))
+  
+  #print(dt_sign)
+return(dt_sign)
+}
 # variable #####################################################################
 sigpro_path <- file.path(data_dr, "sigprofiler")
 ```
 
 I started by comparing denovo signature for all set
-```{r fig.width=20, fig.height= 6}
+```{r compare denovo sign set, fig.width=20, fig.height= 10}
 set_lst <- dir(file.path(sigpro_path, "sign"))|>
-  str_subset("strelka2", negate = TRUE)
+  str_subset("strelka2|KIRC-US|RECA-EU", negate = TRUE)|>
+  set_names()
 
-sign_plot <- map(set_lst, function(set){
-  
-  sign_act <- signatR::sigpro_import_sign(set, type = "profile",
+sign_profile <- map(set_lst, signatR::sigpro_import_sign, type = "profile",
                                         n_sign = 4, 
                                         analysis = "denovo", 
                                         context = "SBS288")
+sign_profile <- sign_profile[c(2,3,4,1)]
+
+for(s in 2:length(sign_profile)){
+    sign_profile[[s]] <- sign_reorder(dt_sign = sign_profile[[s]], 
+                                      dt_ref = sign_profile[[s-1]])
+}
+
+sign_reorder(dt_sign = sign_profile[[4]], 
+            dt_ref = sign_profile[[3]])
+
+sign_plot <- imap(sign_profile, function(sign_act, set_name){
   plot <- signatR::plot_spectra(sign_act, context = "SBS192", render = FALSE)
-  title <- textGrob(set)
+  title <- textGrob(set_name)
   
   wrap_elements(title)/wrap_elements(plot)+plot_layout(heights = c(0.1, 0.9))
 })
+  
 wrap_plots(sign_plot)+plot_layout(ncol = 4)
 ```
 
@@ -118,4 +160,60 @@ custom_cosmic|>
   left_join(noise_sign)|>
   vroom::vroom_write(file.path(file_dr, "custom_1_5_40_8_FFPE_old_GA_SBS_192_signatures.csv"), 
                       delim = ",")
+```
+
+I compared FFPE spectra between the two filtering.
+```{r}
+ffpe_old <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer_old",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")|>
+  select(MutationType, ffpe_old = SBS288C)
+
+ffpe_new <-  signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")|>
+  select(MutationType, ffpe_new = SBS288B)
+
+ffpe_comp <- ffpe_new|>
+  left_join(ffpe_old)
+
+signatR::plot_spectra(ffpe_comp, context = "SBS192")
+
+lsa::cosine(ffpe_comp$ffpe_new, ffpe_comp$ffpe_old)
+```
+
+I also prepared a signature set from previous bad filtering to test reproductibility. au GA fitting
+```{r}
+sign_dt <- signatR::sigpro_import_sign("MODARC_mutect_20221117_VAFer_bad_filtered",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = "suggested", 
+                            analysis = "denovo")
+signatR::plot_spectra(sign_dt, context = "SBS192")
+```
+
+```{r fig.width=10}
+dt_sign <- signatR::sigpro_import_sign("MODARC_mutect_20221117_VAFer_bad_filtered",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = "suggested", 
+                            analysis = "denovo")
+
+dt_ref <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")
+
+dt_sign <- sign_reorder(dt_sign, dt_ref)
+
+ref <- signatR::plot_spectra(dt_ref, context = "SBS192", render = FALSE)
+left <- signatR::plot_spectra(dt_sign, context = "SBS192", render = FALSE)
+
+wrap_plots(ref)+wrap_plots(left)
+
 ```
