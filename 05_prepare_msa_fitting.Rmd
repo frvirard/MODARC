@@ -21,33 +21,6 @@ invisible(purrr::walk(lib_lst, library, character.only = TRUE))
 rm(lib_lst)
 
 # functions ####################################################################
-sign_reorder <- function(dt_sign, dt_ref){
-  # add a ncol check between ref and sign
-  # idea is good but not working perfectly
-  sign <- dt_sign|>
-    tibble::column_to_rownames("MutationType") 
-  
-  ref <- dt_ref|>
-    tibble::column_to_rownames("MutationType")
-
-  sign_lst <- colnames(ref)|>
-    set_names()
-  
-  cosine <- map_dfr(sign_lst, function(r){
-    map_dfr(sign_lst, function(s){
-      1-lsa::cosine(sign[[s]], ref[[r]])
-    })
-  })|>
-    as.matrix()
-  
-  order <- RcppHungarian::HungarianSolver(cosine)
-  order <- sign_lst[order$pairs[,2]]
-  
-  dt_sign <- dt_sign|>
-    select(MutationType, all_of(order))
-  
-return(dt_sign)
-}
 # variable #####################################################################
 sigpro_path <- file.path(data_dr, "sigprofiler")
 ```
@@ -65,7 +38,7 @@ sign_profile <- map(set_lst, signatR::sigpro_import_sign, type = "profile",
 sign_profile <- sign_profile[c(2,3,4,1)]
 
 for(s in 2:length(sign_profile)){
-    sign_profile[[s]] <- sign_reorder(dt_sign = sign_profile[[s]], 
+    sign_profile[[s]] <- signatR::sign_reorder(dt_sign = sign_profile[[s]], 
                                       dt_ref = sign_profile[[s-1]])
 }
 
@@ -80,8 +53,9 @@ wrap_plots(sign_plot)+plot_layout(ncol = 4)
 ```
 
 ## VAFer
-We decided with Jiri to do a first run using solution 4 of Vafer filtering?
-SBS288B was considered as noise and added to SBS40, 5, 1 and 8 with SBS_GA
+We decided with Jiri to do a first run using solution 4 of Vafer filtering.
+SBS288B was considered as noise and was added to SBS40, 5, 1 and 8 with SBS_GA for MSA fitting.
+
 ```{r}
 sign_dt <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer",
                             type = "profile", 
