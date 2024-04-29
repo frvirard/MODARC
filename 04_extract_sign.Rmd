@@ -30,6 +30,31 @@ walk(context_lst, function(c){
   set_lst <- dir(file.path(data_dr, "sigprofiler/matrix"))|>
   map(signatR::sigpro_extract, context = c, solution_fit = TRUE, compatibility = TRUE)
 })
-
 ```
 
+```{r MODARC_KIRC-US}
+context_lst <- c("SBS96", "SBS288")
+project_lst <- list("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                    "simple_somatic_mutation.open_KIRC-US_PCAWG")
+
+walk(context_lst, function(c){
+  signatR::sigpro_extract(project_matrix = project_lst, 
+                          project_sign = "MODARC_vafer_KIRC-US",
+                          context = c, 
+                          solution_fit = TRUE, 
+                          compatibility = TRUE)
+})
+```
+```{r MODARC_KIRC-US}
+context_lst <- c("SBS96", "SBS288")
+project_lst <- list("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                    "simple_somatic_mutation.open_RECA-EU_PCAWG")
+
+walk(context_lst, function(c){
+  signatR::sigpro_extract(project_matrix = project_lst, 
+                          project_sign = "MODARC_vafer_RECA-EU",
+                          context = c, 
+                          solution_fit = TRUE,
+                          compatibility = TRUE)
+})
+```

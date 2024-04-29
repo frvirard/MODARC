@@ -1,0 +1,219 @@
+---
+title: "prepare MSA fitting"
+output: html_document
+date: "2024-01-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+### setup ----------------------------------------------------------------------
+source("config.R")
+remotes::install_github("frvirard/signatR", auth_token = token)
+
+# library ######################################################################
+lib_lst <- c("dplyr",
+             "purrr",
+             "stringr",
+             "grid",
+             "patchwork")
+
+invisible(purrr::walk(lib_lst, library, character.only = TRUE))
+rm(lib_lst)
+
+# functions ####################################################################
+# variable #####################################################################
+sigpro_path <- file.path(data_dr, "sigprofiler")
+```
+
+I started by comparing denovo signature for all set
+```{r compare denovo sign set, fig.width=20, fig.height= 10}
+set_lst <- dir(file.path(sigpro_path, "sign"))|>
+  str_subset("strelka2|KIRC-US|RECA-EU", negate = TRUE)|>
+  set_names()
+
+sign_profile <- map(set_lst, signatR::sigpro_import_sign, type = "profile",
+                                        n_sign = 4, 
+                                        analysis = "denovo", 
+                                        context = "SBS288")
+sign_profile <- sign_profile[c(2,3,4,1)]
+
+for(s in 2:length(sign_profile)){
+    sign_profile[[s]] <- signatR::sign_reorder(dt_sign = sign_profile[[s]], 
+                                      dt_ref = sign_profile[[s-1]])
+}
+
+sign_plot <- imap(sign_profile, function(sign_act, set_name){
+  plot <- signatR::plot_spectra(sign_act, context = "SBS192", render = FALSE)
+  title <- textGrob(set_name)
+  
+  wrap_elements(title)/wrap_elements(plot)+plot_layout(heights = c(0.1, 0.9))
+})
+  
+wrap_plots(sign_plot)+plot_layout(ncol = 4)
+```
+
+## VAFer
+We decided with Jiri to do a first run using solution 4 of Vafer filtering.
+SBS288B was considered as noise and was added to SBS40, 5, 1 and 8 with SBS_GA for MSA fitting.
+
+```{r}
+sign_dt <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")
+
+signatR::plot_spectra(sign_dt, context = "SBS192")
+
+noise_sign <- sign_dt|>
+  select(MutationType, SBS288B)|>
+  filter(!str_detect(MutationType, "N"))|>
+  mutate(Strand = str_sub(MutationType, 1,1),
+         Type = str_sub(MutationType, 5,7),
+         Subtype = paste0(str_sub(MutationType, 3,3),
+                          str_sub(MutationType, 5,5),
+                          str_sub(MutationType, 9,9)))|>
+      select(Strand, Type, Subtype, SBS_FFPE = SBS288B)|>
+  mutate(SBS_FFPE = SBS_FFPE/sum(SBS_FFPE))
+
+sbs_GA <- vroom::vroom(file.path(file_dr, "MEFh_GA_WX_192.csv"), show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS_GA = MEFh_GA_WX_192)
+
+custom_cosmic <- vroom::vroom(file.path(file_dr, "IARC_custom_SBS_192_signatures.csv"), 
+                              show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS1, SBS5, SBS40, SBS8)
+
+custom_cosmic|>
+  left_join(sbs_GA)|>
+  left_join(noise_sign)|>
+  vroom::vroom_write(file.path(file_dr, "custom_1_5_40_8_FFPE_GA_SBS_192_signatures.csv"), 
+                      delim = ",")
+```
+
+## VAFer old
+with a VAFer filtering less stringent (old version), signature were nearly identical.
+FFPE noise was signature SBS288C.
+
+```{r}
+sign_dt <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer_old",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")
+
+signatR::plot_spectra(sign_dt, context = "SBS192")
+```
+
+```{r}
+ffpe_old <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer_old",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")|>
+  select(MutationType, ffpe_old = SBS288C)
+
+ffpe_new <-  signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")|>
+  select(MutationType, ffpe_new = SBS288B)
+
+ffpe_comp <- ffpe_new|>
+  left_join(ffpe_old)
+
+signatR::plot_spectra(ffpe_comp, context = "SBS192")
+
+lsa::cosine(ffpe_comp$ffpe_new, ffpe_comp$ffpe_old)
+```
+
+I also prepared a signature set from previous bad filtering to test reproducibility. of GA fitting.
+
+```{r}
+FFPE_sign <- "SBS288C"
+
+noise_sign <- sign_dt|>
+  select(MutationType, all_of(FFPE_sign))|>
+  filter(!str_detect(MutationType, "N"))|>
+  mutate(Strand = str_sub(MutationType, 1,1),
+         Type = str_sub(MutationType, 5,7),
+         Subtype = paste0(str_sub(MutationType, 3,3),
+                          str_sub(MutationType, 5,5),
+                          str_sub(MutationType, 9,9)))|>
+      select(Strand, Type, Subtype, SBS_FFPE = FFPE_sign)|>
+  mutate(SBS_FFPE = SBS_FFPE/sum(SBS_FFPE))
+
+sbs_GA <- vroom::vroom(file.path(file_dr, "MEFh_GA_WX_192.csv"), show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS_GA = MEFh_GA_WX_192)
+
+custom_cosmic <- vroom::vroom(file.path(file_dr, "IARC_custom_SBS_192_signatures.csv"), 
+                              show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS1, SBS5, SBS40, SBS8)
+
+custom_cosmic|>
+  left_join(sbs_GA)|>
+  left_join(noise_sign)|>
+  vroom::vroom_write(file.path(file_dr, "custom_1_5_40_8_FFPE_old_GA_SBS_192_signatures.csv"), 
+                      delim = ",")
+```
+
+## bad filtered
+
+```{r}
+sign_dt <- signatR::sigpro_import_sign("MODARC_mutect_20221117_VAFer_bad_filtered",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = "suggested", 
+                            analysis = "denovo")
+signatR::plot_spectra(sign_dt, context = "SBS192")
+```
+
+```{r fig.width=10}
+dt_sign <- signatR::sigpro_import_sign("MODARC_mutect_20221117_VAFer_bad_filtered",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = "suggested", 
+                            analysis = "denovo")
+
+dt_ref <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")
+
+dt_sign <- sign_reorder(dt_sign, dt_ref)
+
+ref <- signatR::plot_spectra(dt_ref, context = "SBS192", render = FALSE)
+left <- signatR::plot_spectra(dt_sign, context = "SBS192", render = FALSE)
+
+wrap_plots(ref)+wrap_plots(left)
+
+```
+```{r}
+FFPE_sign <- "SBS288A"
+
+noise_sign <- dt_sign|>
+  select(MutationType, all_of(FFPE_sign))|>
+  filter(!str_detect(MutationType, "N"))|>
+  mutate(Strand = str_sub(MutationType, 1,1),
+         Type = str_sub(MutationType, 5,7),
+         Subtype = paste0(str_sub(MutationType, 3,3),
+                          str_sub(MutationType, 5,5),
+                          str_sub(MutationType, 9,9)))|>
+      select(Strand, Type, Subtype, SBS_FFPE = FFPE_sign)|>
+  mutate(SBS_FFPE = SBS_FFPE/sum(SBS_FFPE))
+
+sbs_GA <- vroom::vroom(file.path(file_dr, "MEFh_GA_WX_192.csv"), show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS_GA = MEFh_GA_WX_192)
+
+custom_cosmic <- vroom::vroom(file.path(file_dr, "IARC_custom_SBS_192_signatures.csv"), 
+                              show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS1, SBS5, SBS40, SBS8)
+
+custom_cosmic|>
+  left_join(sbs_GA)|>
+  left_join(noise_sign)|>
+  vroom::vroom_write(file.path(file_dr, "custom_1_5_40_8_FFPE_bad_filtered_GA_SBS_192_signatures.csv"), 
+                      delim = ",")
+```
+
