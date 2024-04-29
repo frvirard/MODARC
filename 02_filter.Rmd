@@ -24,7 +24,8 @@ rm(lib_lst)
 maf_dr <- file.path(data_dr, "maf")
 ```
 
-We used VAFer with Jiri to find the more relevant setup. VAFer is providing a setting file. We started from sweet spot and increased the cutoff until reaching a mutation count between 3000.
+## VAFer
+We used VAFer with Jiri to find the more relevant setup. VAFer is providing a setting file. We started from sweet spot and increased the cutoff until reaching a mutation count around 3000.
 
 ```{r import mutect data}
 param_file <- "2024-01-19_GWZ_20221025_MODARC_mutect_20221117.maf_settings.tsv"
@@ -76,10 +77,11 @@ vroom::vroom(file.path(data_dr, "maf",
   count(sample)
 ```
 
+## old VAFer
 The result wasn't the one expected after msa fitting. I created another maf with old settings to try understand the origin of the problem.
 Note that there was an error in MORDAC_bak filtering Cov_T cutoff was set to 0 and not 10.
 
-```{r}
+```{r vafer old}
 param_file <- "2023-01-06_MODARC_newcall_mutect.maf_settings.tsv"
 maf_file <- "GWZ_20221025_MODARC_mutect_20221117.maf"
 
@@ -114,6 +116,40 @@ if(!file.exists(file.path(maf_dr, output_file))){
 }
 ```
 
+## VAFer + cov_T >1
+Jiri asked to test another filtering with >5 cov_mut for all samples and a VAF based on latest VAFer settings.
 
+```{r vafer cov5}
+param_file <- "2024-01-19_GWZ_20221025_MODARC_mutect_20221117.maf_settings.tsv"
+maf_file <- "GWZ_20221025_MODARC_mutect_20221117.maf"
 
+param <- vroom::vroom(file.path(data_dr, param_file), show_col_types = FALSE)
+maf <- vroom::vroom(file.path(data_dr, "maf", maf_file), show_col_types = FALSE)
 
+output_file <- str_replace(maf_file, ".maf$", "_vafer_cov5.maf")
+
+if(!file.exists(file.path(maf_dr, output_file))){
+  dt <- param|>
+  rename(s = sample, 
+         cn = Cov_N,
+         can = Cov_alt_N,
+         ct = Cov_T,
+         cat = Cov_alt_T)|>
+  pmap_dfr(function(s, cn, 
+                    can, ct, cat, vaf_cutoff, ...){
+    message("oo processing ", s)
+    maf|>
+      filter(FILTER == "PASS")|>
+      filter(avsnp150 == ".")|>
+      filter(sample == s) |>
+      filter(Cov_N >= cn) |>
+      filter(Cov_alt_N <= can)|>
+      filter(Cov_T >= ct)|>
+      filter(Cov_alt_T >= 5)|>
+      filter(VAF_T >= vaf_cutoff)
+  })
+  vroom::vroom_write(dt, file.path(data_dr, "maf", output_file))
+}else{
+  message("file detected, skipping ...")
+}
+```
