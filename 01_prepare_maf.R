@@ -37,12 +37,3 @@ walk(maf_lst, function(maf){
     mutate(sample = str_remove(sample, "_calls.2.tsv"))|>
     vroom::vroom_write(file.path(maf_dr, maf))
 })
-
-## create exon only maf --------------------------------------------------------
-# walk(maf_lst, function(maf){
-# vroom::vroom(file.path(maf_dr, maf), show_col_types = FALSE)|>
-#   filter(Func.refGene != "intergenic")|>
-#   vroom::vroom_write(file.path(maf_dr, str_remove(maf, ".maf")|>
-#                                  paste0("_wo_intergenic.maf")))
-# })
-
