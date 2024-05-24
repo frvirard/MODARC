@@ -24,6 +24,10 @@ rm(lib_lst)
 maf_dr <- file.path(data_dr, "maf")
 ```
 
+The challenge was to find the right filtering to reduce the impact of FFPE induced mutations.
+A previous work using VAFer was rather successful at extracting GA signature with MSA. Unfortunately, filtering was wrong (latter called bad filtering) and casting doute on the result.
+
+
 ## VAFer
 We used VAFer with Jiri to find the more relevant setup. VAFer is providing a setting file. We started from sweet spot and increased the cutoff until reaching a mutation count around 3000.
 

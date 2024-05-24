@@ -24,6 +24,8 @@ rm(lib_lst)
 # variable #####################################################################
 ```
 
+Signature extraction was done on the differents filtered matrices to get FFPE signs.
+
 ```{r}
 context_lst <- c("SBS96", "SBS288", "SBS384")
 walk(context_lst, function(c){

@@ -52,7 +52,7 @@ walk(c("mutect", "strelka"), function(caller){
 })
 ```
 
-liftover was creating errors
+Note that liftover was creating errors
 
 KIRC-US GRCh38 : Matrices generated for 39 samples with 10 errors
 KIRC-US : Matrices generated for 39 samples with 0 errors
