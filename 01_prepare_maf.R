@@ -38,7 +38,7 @@ walk(maf_lst, function(maf){
 })
 
 ## RECA-EU KIRC-US -------------------------------------------------------------
-# I downloaded datat from PCAWG ICGC website 20240208
+# I downloaded PCAWG data from ICGC website 20240208
 dataset_lst <- c("RECA-EU", "KIRC-US")
 walk(dataset_lst, function(set){
   message("oo Processing ", set)
@@ -59,6 +59,7 @@ walk(dataset_lst, function(set){
 })
 
 ## create a liftover version ---------------------------------------------------
+#' to be able to compare PCAWG data to our data I converted Hg37 to HG38
 chain <- rtracklayer::import.chain(file.path(file_dr,"hg19ToHg38.over.chain"))
 
 dataset_lst <- c("RECA-EU", "KIRC-US")
