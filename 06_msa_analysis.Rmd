@@ -1,0 +1,336 @@
+---
+title: "msa fitting"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-02-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+knitr::opts_chunk$set(message=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+## library #####################################################################
+lib_lst <- c("dplyr",
+             "rlang",
+             "purrr",
+             "tidyr",
+             "stringr",
+             "tibble",
+             "grid",
+             "patchwork",
+             "ComplexHeatmap")
+
+invisible(lapply(lib_lst, library, character.only = TRUE))
+rm(lib_lst)
+
+## functions ###################################################################
+ga_heatmap <- function(proj, msa_run, thr){
+    # get activity ---------------------------------------------------------------
+  dt <- msa_tble |>
+    filter(project == proj)|>
+    filter(threshold == thr)|>
+    filter(options == msa_run)|>
+    pmap_dfr(signatR::msa_import, type = "pruned")|>
+    mutate(id_tumor = str_sub(sample, start = 1, end = 5))|>
+    select(-sample)|>
+    pivot_longer(-id_tumor, names_to = "signature", 
+                 values_to = "contrib")|>
+    filter(!signature %in% c("SBS_FFPE"))|>
+    group_by(id_tumor)|>
+    mutate(contrib = contrib/sum(contrib))|>
+    mutate(contrib = if_else(is.na(contrib), 0, contrib))|>
+    pivot_wider(names_from = signature, values_from = contrib, values_fill = 0)|>
+    column_to_rownames("id_tumor")|>
+    t()
+  
+  # check file name ------------------------------------------------------------
+  if(!sum(str_detect(colnames(dt), "T"))){
+    colnames(dt) <- paste0(colnames(dt),"T")
+  }
+  # get mutation burden --------------------------------------------------------
+  mut_burden <- signatR::sigpro_import_mat(proj,
+                                           "SBS96") |>
+    pivot_longer(-MutationType, names_to = "id_tumor", values_to = "burden") |>
+    group_by(id_tumor)|>
+    summarise(burden = sum(burden))|>
+    mutate(id_tumor = str_remove(id_tumor, "_vs_.+"))
+  
+  # create annototion ----------------------------------------------------------
+  ht_sample <- tibble(id_tumor = colnames(dt))|>
+    left_join(metadata, by = "id_tumor")|>
+    select(id_tumor, ACR, Sex, acrylam, acrylamqui, alcoh, BMI,
+           age = "Age at diagnosis", Signatures)|>
+    mutate(acrylamqui = as.character(acrylamqui))
+  
+  col_contrib = col_fun = circlize::colorRamp2(c(0, 0.3, 1), c("blue","yellow", "yellow"))
+  
+  col_alcohol = circlize::colorRamp2(c(0, 40), c("white", "#2B4162"))
+  col_BMI = circlize::colorRamp2(c(20, 35), c("#C3E6B5","#416632"))
+  col_age = circlize::colorRamp2(c(65, 80), c("white", "#62B6CB"))
+  
+  ht_anno_top <- columnAnnotation(annotation_name_side = "left",
+                                  exposure = anno_barplot(ht_sample$acrylam,
+                                                          border = FALSE,
+                                                          gp = gpar(fill = "#cccccc",
+                                                                    col = NA),
+                                                          bar_width = 1),
+                                  # mutation = anno_barplot(ht_sample$burden,
+                                  #                         border = FALSE,
+                                  #                         gp = gpar(fill = "#cccccc",
+                                  #                                   col = NA),
+                                  #                         bar_width = 1),
+                                  na_col = "white",
+                                  annotation_name_gp = gpar(fontsize = 10),
+                                  annotation_height = unit(c(15), c("mm"))
+  )
+  
+  ht_anno_bottom <- columnAnnotation(annotation_name_side = "left",
+                                     GA_hiconf = ht_sample$Signatures,
+                                     ACR = ht_sample$ACR,
+                                     sex = ht_sample$Sex,
+                                     age = ht_sample$age,
+                                     alcohol = ht_sample$alcoh,
+                                     BMI = ht_sample$BMI,
+                                     TENSIE = ht_sample$TENSIE,
+                                     MED_AHYP = ht_sample$MED_AHYP,
+                                     col = list(ACR = c(Low = "grey90",
+                                                        High = "red"),
+                                                GA_hiconf = c("1" = "white", "2" = "#F3CFCC"),
+                                                sex = c("F" = "#F5F0F6", "M"="#D7B377"),
+                                                alcohol = col_alcohol,
+                                                age = col_age,
+                                                BMI = col_BMI),
+                                     na_col = "white",
+                                     annotation_name_gp = gpar(fontsize = 10),
+                                     show_legend = c(FALSE, TRUE, TRUE, TRUE, TRUE, TRUE))
+  
+  # create heatmap -------------------------------------------------------------
+  ht <- grid.grabExpr(draw(ComplexHeatmap::Heatmap(name = "signature\ncontribution",
+                                                   col = col_contrib,
+                                                   dt,
+                                                   top_annotation = ht_anno_top,
+                                                   bottom_annotation = ht_anno_bottom,
+                                                   rect_gp = gpar(col = "white", lwd = 1)),
+                           annotation_legend_side = "bottom"))
+  title <- textGrob(paste(msa_run, thr, sep = "\n"))
+  wrap_elements(title)/wrap_elements(ht)+plot_layout(heights = c(0.1, 0.9))
+}
+## variable ####################################################################
+source("config.R")
+remotes::install_github("frvirard/signatR", auth_token = token, upgrade = "never")
+
+## create msa_tble -------------------------------------------------------------
+path_MSA_results <- file.path(data_dr, "msa")
+
+project_lst <- dir(path_MSA_results)|>
+  set_names()
+
+msa_tble <- map_dfr(project_lst, function(proj){
+  tibble(project = proj, param = dir(file.path("data/MSA", proj), recursive = TRUE))|>
+    separate(param, c("context", "options", "threshold"),"/")|>
+    distinct()
+})
+
+## get metadata ----------------------------------------------------------------
+metadata <- readxl::read_xlsx(file.path(data_dr, "MODARC dataset 20230804_extended.xlsx"))|>
+  mutate(id_tumor = paste0(genre_id_tumor, "T"), .after = ADMNR)|>
+  mutate(BMI = if_else(BMI == -1, NA, BMI))
+```
+
+# Bad filtering
+## old signature set
+The best SBSGA extraction was obtained using a dataset with a bad filtering (MODARC_mutect_20221117_VAFer_bad_filtered), with 2 FFPE signatures and without adding SBS8 to signature set (MODARC_1_5_40_GA_FPPE_removal). 
+
+As always, no penalties were applied with SBS192. But specificity was very low without penalties.
+
+```{r fig.height=6}
+msa_tble |>
+  filter(project == "MODARC_mutect_20221117_VAFer_bad_filtered")|>
+  filter(options == "MODARC_1_5_40_GA_FPPE_removal")|>
+  signatR::msa_plot_summary()
+```
+Ten samples were identified without penalties but specificity was low (below 0.6).
+Adding 0.003 penalty, removed one sample but increases specificity (0.8).
+Increasing penalty removes 2 samples with better specificity and should be considered.
+
+```{r fig.height=6}
+msa_run <- "MODARC_1_5_40_GA_FPPE_removal"
+proj <- "MODARC_mutect_20221117_VAFer_bad_filtered"
+
+thr_lst <- msa_tble|>
+  filter(project == proj)|>
+  filter(options == msa_run)|>
+  pull(threshold)
+
+map(thr_lst, function(thr){
+  ga_heatmap(proj, msa_run, thr)
+  })
+```
+
+```{r fig.height=6}
+modarc_set <- vroom::vroom(file.path(file_dr, "MODARC_1_5_40_GA_FPPE_SBS_192_signatures.csv"))|>
+  mutate(MutationType = paste0(Strand, ":", 
+                              str_sub(Subtype, 1,1),
+                              "[",Type,"]",
+                              str_sub(Subtype, 3,3)), .before = 1)|>
+  select(-c(Strand,Type,Subtype))|>
+  signatR::plot_spectra("SBS192")
+```
+## bad filtered with SBS8 and 2 FFPE signatures
+I added SBS8 to sign set. Absence of penalties decreases the specificity.
+
+```{r fig.height=6}
+msa_tble |>
+  filter(project == "MODARC_mutect_20221117_VAFer_bad_filtered")|>
+  filter(options == "custom_1_5_40_8_2FFPE_bad_filtered_GA_removal")|>
+  signatR::msa_plot_summary()
+```
+
+Without penalties, 4 samples were lost.
+
+```{r fig.height=6}
+msa_run <- "custom_1_5_40_8_2FFPE_bad_filtered_GA_removal"
+proj <- "MODARC_mutect_20221117_VAFer_bad_filtered"
+
+thr_lst <- msa_tble|>
+  filter(project == proj)|>
+  filter(options == msa_run)|>
+  pull(threshold)
+
+map(thr_lst, function(thr){
+  ga_heatmap(proj, msa_run, thr)
+  })
+```
+
+```{r }
+bad_f_2FFPE_SBS8 <- vroom::vroom(file.path(file_dr, "custom_1_5_40_8_2FFPE_bad_filtered_GA_SBS_192_signatures.csv"))|>
+  mutate(MutationType = paste0(Strand, ":", 
+                              str_sub(Subtype, 1,1),
+                              "[",Type,"]",
+                              str_sub(Subtype, 3,3)), .before = 1)|>
+  select(-c(Strand,Type,Subtype))|>
+  signatR::plot_spectra("SBS192")
+```
+
+## bad filtered with SBS8 and 1 FFPE signatures
+I only have the result without penalies
+```{r bad filtering summary, fig.height=6}
+msa_tble |>
+  filter(project == "MODARC_mutect_20221117_VAFer_bad_filtered")|>
+  filter(options == "custom_1_5_40_8_FFPE_bad_filtered_GA_removal")|>
+  signatR::msa_plot_summary()
+```
+Removing one FFPE signature increases the number of SBS_GA despite the presence of SBS8.
+
+```{r fig.height=6}
+msa_run <- "custom_1_5_40_8_FFPE_bad_filtered_GA_removal"
+proj <- "MODARC_mutect_20221117_VAFer_bad_filtered"
+
+thr_lst <- msa_tble|>
+  filter(project == proj)|>
+  filter(options == msa_run)|>
+  pull(threshold)
+
+map(thr_lst, function(thr){
+  ga_heatmap(proj, msa_run, thr)
+  })
+```
+
+```{r }
+bad_f_FFPE_SBS8 <- vroom::vroom(file.path(file_dr, "custom_1_5_40_8_FFPE_bad_filtered_GA_SBS_192_signatures.csv"))|>
+  mutate(MutationType = paste0(Strand, ":", 
+                              str_sub(Subtype, 1,1),
+                              "[",Type,"]",
+                              str_sub(Subtype, 3,3)), .before = 1)|>
+  select(-c(Strand,Type,Subtype))|>
+  signatR::plot_spectra("SBS192")
+```
+
+## compare sign set
+```{r fig.width=10, fig.height=8}
+patchwork::wrap_elements(modarc_set)+
+  patchwork::wrap_elements(bad_f_2FFPE_SBS8)+
+  patchwork::wrap_elements(bad_f_FFPE_SBS8)
+```
+
+## VAFer Stringent filtering
+
+
+```{r fig.height=6, fig.width=5}
+msa_tble |>
+  filter(project == "GWZ_20221025_MODARC_mutect_20221117_vafer")|>
+  filter(options == "custom_1_5_40_8_FFPE_GA_removal")|>
+  signatR::msa_plot_summary()
+```
+
+SBS_GA signature attribution remained stable when the second penalties range was applied, but dropped for higher ranges. Second range seemed to be the best compromise between specificity and sensitivity, however, VAFer filtering seemed to be too stringent to identified SBS_GA with only one positive sample.
+
+```{r fig.height=6}
+msa_run <- "custom_1_5_40_8_FFPE_GA_removal"
+proj <- "GWZ_20221025_MODARC_mutect_20221117_vafer"
+
+thr_lst <- msa_tble|>
+  filter(project == proj)|>
+  filter(options == msa_run)|>
+  pull(threshold)
+
+map(thr_lst, function(thr){
+  ga_heatmap(proj, msa_run, thr)
+  })
+```
+## VAFer Less stringent filtering
+Previous filtering (VAFer old) was less stringent. Specificity was higher than 0.80 without any penalty but with a lower sensitivity than previously. Adding penalty was only optimal at 0.0007 (driven by SBS8 signature) with a loss of sensitivity.
+
+NB: There was an error during the run
+
+```{r fig.height=6, fig.width=5}
+msa_tble |>
+  filter(project == "GWZ_20221025_MODARC_mutect_20221117_vafer_old")|>
+  filter(options == "custom_1_5_40_8_FFPE_old_GA_removal")|>
+  signatR::msa_plot_summary()
+```
+
+Using less stringent filtering (old VAFer filtering) increases GA detection, but specificity remained low.
+
+```{r fig.height=6}
+msa_run <- "custom_1_5_40_8_FFPE_old_GA_removal"
+proj <- "GWZ_20221025_MODARC_mutect_20221117_vafer_old"
+
+thr_lst <- msa_tble|>
+  filter(project == proj)|>
+  filter(options == msa_run)|>
+  pull(threshold)
+
+map(thr_lst, function(thr){
+  ga_heatmap(proj, msa_run, thr)
+  })
+```
+
+# Signature sets 
+FFPE            2   1   
+SBS8                x
+Bad filtered    9
+VAFer               
+old VAFer
+
+One FFPE signature
+  old VAFer filtering and SBS8
+custom_1_5_40_8_FFPE_old_GA_SBS_192_signatures
+
+  new VAFer filtering and SBS8
+custom_1_5_40_8_FFPE_GA_SBS_192_signatures
+
+  bad filtering and SBS8
+custom_1_5_40_8_FFPE_bad_filtered_GA_SBS_192_signatures.csv
+
+Two FFPE 
+  bad filtering and SBS8
+custom_1_5_40_8_2FFPE_bad_filtered_GA_SBS_192_signatures.csv
+```{r}
+signset_lst <- c("custom_1_5_40_8_2FFPE_bad_filtered_GA_SBS_192_signatures.csv",
+                 "custom_1_5_40_8_FFPE_bad_filtered_GA_SBS_192_signatures.csv",
+                 "custom_1_5_40_8_FFPE_GA_SBS_192_signatures.csv",
+                 "custom_1_5_40_8_FFPE_old_GA_SBS_192_signatures.csv",
+                 "MODARC_1_5_40_GA_FPPE_SBS_192_signatures.csv")
+```
