@@ -256,7 +256,7 @@ patchwork::wrap_elements(modarc_set)+
 
 ## VAFer Stringent filtering
 
-
+### with SBS8
 ```{r fig.height=6, fig.width=5}
 msa_tble |>
   filter(project == "GWZ_20221025_MODARC_mutect_20221117_vafer")|>
@@ -279,6 +279,29 @@ map(thr_lst, function(thr){
   ga_heatmap(proj, msa_run, thr)
   })
 ```
+
+### without SBS8
+```{r fig.height=6, fig.width=5}
+msa_tble |>
+  filter(project == "GWZ_20221025_MODARC_mutect_20221117_vafer")|>
+  filter(options == "custom_1_5_40_FFPE_GA_removal")|>
+  signatR::msa_plot_summary()
+```
+```{r fig.height=6}
+msa_run <- "custom_1_5_40_FFPE_GA_removal"
+proj <- "GWZ_20221025_MODARC_mutect_20221117_vafer"
+
+thr_lst <- msa_tble|>
+  filter(project == proj)|>
+  filter(options == msa_run)|>
+  pull(threshold)
+
+map(thr_lst, function(thr){
+  ga_heatmap(proj, msa_run, thr)
+  })
+```
+
+
 ## VAFer Less stringent filtering
 Previous filtering (VAFer old) was less stringent. Specificity was higher than 0.80 without any penalty but with a lower sensitivity than previously. Adding penalty was only optimal at 0.0007 (driven by SBS8 signature) with a loss of sensitivity.
 
