@@ -129,6 +129,45 @@ custom_cosmic|>
                       delim = ",")
 ```
 
+### two FFPE only
+
+```{r}
+FFPE_sign <- c("SBS288B", "SBS288C")
+
+sign_dt <- signatR::sigpro_import_sign("GWZ_20221025_MODARC_mutect_20221117_vafer",
+                            type = "profile", 
+                            context = "SBS288",
+                            n_sign = 4, 
+                            analysis = "denovo")
+noise_sign <- sign_dt|>
+  filter(!str_detect(MutationType, "N"))|>
+  select(MutationType, all_of(FFPE_sign))|>
+  pivot_longer(-MutationType, names_to = "sign", values_to = "count")|>
+  mutate(sign = str_replace(sign, "SBS288", "SBS_FFPE_"))|>
+  group_by(sign)|>
+  mutate(count = count/sum(count))|>
+  pivot_wider(names_from = sign, values_from = count)|>
+  mutate(Strand = str_sub(MutationType, 1,1),
+         Type = str_sub(MutationType, 5,7),
+         Subtype = paste0(str_sub(MutationType, 3,3),
+                          str_sub(MutationType, 5,5),
+                          str_sub(MutationType, 9,9)))|>
+  select(-MutationType)
+
+
+sbs_GA <- vroom::vroom(file.path(file_dr, "MEFh_GA_WX_192.csv"), show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS_GA = MEFh_GA_WX_192)
+
+custom_cosmic <- vroom::vroom(file.path(file_dr, "IARC_custom_SBS_192_signatures.csv"), 
+                              show_col_types = FALSE)|>
+    select(Strand, Type, Subtype, SBS1, SBS5, SBS40)
+
+custom_cosmic|>
+  left_join(sbs_GA)|>
+  left_join(noise_sign)|>
+  vroom::vroom_write(file.path(file_dr, "custom_1_5_40_2FFPE_GA_SBS_192_signatures.csv"), 
+                      delim = ",")
+```
 
 ## VAFer old
 with a VAFer filtering less stringent (old version), signature were nearly identical.
