@@ -330,30 +330,4 @@ map(thr_lst, function(thr){
   })
 ```
 
-# Signature sets 
-FFPE            2   1   
-SBS8                x
-Bad filtered    9
-VAFer               
-old VAFer
 
-One FFPE signature
-  old VAFer filtering and SBS8
-custom_1_5_40_8_FFPE_old_GA_SBS_192_signatures
-
-  new VAFer filtering and SBS8
-custom_1_5_40_8_FFPE_GA_SBS_192_signatures
-
-  bad filtering and SBS8
-custom_1_5_40_8_FFPE_bad_filtered_GA_SBS_192_signatures.csv
-
-Two FFPE 
-  bad filtering and SBS8
-custom_1_5_40_8_2FFPE_bad_filtered_GA_SBS_192_signatures.csv
-```{r}
-signset_lst <- c("custom_1_5_40_8_2FFPE_bad_filtered_GA_SBS_192_signatures.csv",
-                 "custom_1_5_40_8_FFPE_bad_filtered_GA_SBS_192_signatures.csv",
-                 "custom_1_5_40_8_FFPE_GA_SBS_192_signatures.csv",
-                 "custom_1_5_40_8_FFPE_old_GA_SBS_192_signatures.csv",
-                 "MODARC_1_5_40_GA_FPPE_SBS_192_signatures.csv")
-```
