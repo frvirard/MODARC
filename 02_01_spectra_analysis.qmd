@@ -1,0 +1,169 @@
+---
+title: "spectra analysis"
+format: html
+---
+
+```{r setup, include=FALSE}
+# library ######################################################################
+lib_lst <- c("dplyr",
+             "forcats",
+             "tibble",
+             "tidyr",
+             "purrr",
+             "stringr",
+             "readr",
+             "ggplot2",
+             "gridExtra",
+             "ComplexHeatmap",
+             "RColorBrewer",
+             "patchwork")
+
+invisible(purrr::walk(lib_lst, library, character.only = TRUE))
+rm(lib_lst)
+
+# functions ####################################################################
+# variable #####################################################################
+source("config.R")
+remotes::install_github("frvirard/signatR", auth_token = token)
+```
+
+## VAFer
+One sample (SSC_15_clone3) was having more than 3000 mutations and could produce bleeding, if its spectra differs from the others
+
+```{r mutation burden}
+## mutation matrix  ------------------------------------------------------------
+mut_mat <- signatR::sigpro_import_mat("GWZ_20221025_MODARC_mutect_20221117_vafer", "SBS96")|>
+  column_to_rownames("MutationType")
+
+## compute mutation burden -----------------------------------------------------
+mut_burden <- mut_mat %>%
+  rownames_to_column("MutationType")|>
+  pivot_longer(-MutationType, names_to = "sample", values_to = "count")|>
+  group_by(sample)|>
+  summarise(mut_count = sum(count))
+
+## get mutation burden distribution --------------------------------------------
+ggplot(mut_burden, aes(mut_count))+
+  geom_histogram(binwidth = 0.09, fill = "#A9221F", color = "white")+
+  theme_classic()+
+  xlab("mutation burden (log10)")+
+  ylab("number of samples")+
+  scale_x_continuous(trans = "log10")+
+  scale_y_continuous(expand = c(0,0))
+```
+
+```{r sample spectra compare, fig.width = 8, fig.height=12}
+cos_mat <- mut_mat %>%
+  as.matrix() %>%
+  lsa::cosine()
+
+cos_mat <-  as.dist(1-cos_mat)
+
+## hierarchical clustering -----------------------------------------------------
+sample_tree <- hclust(cos_mat, "average") %>%
+    dendsort::dendsort(isReverse = TRUE)
+
+## cosine heatmap --------------------------------------------------------------
+# heatmaps colors
+col_fun <- circlize::colorRamp2(c(0, 25, 50), c("#B5D4ED", "#FFFED0", "#AA2E37"))
+
+# create sigprofiler style mutation type order
+seq <- c("A", "C", "G", "T")
+group <- c(paste0("[C>", c("A","G","T"),"]"), paste0("[T>", c("A", "C", "G"),"]"))
+
+mut_order <- unlist(purrr::map(group, function(x){
+  paste0(unlist(purrr::map(seq, rep, 4)),rep(x,16), rep(seq,4))
+}))
+
+# create heapmap
+annotation <- columnAnnotation(annotation_name_side = "left",
+                               mutation = anno_barplot(
+                                 mut_burden$mut_count,
+                                 border = FALSE,
+                                 gp = gpar(fill = "#cccccc", col = NA),
+                                 bar_width = 1)#,
+                           #    treatment = metadata$treatment,
+                          #     tumor_site = metadata$tumor_site,
+                           #    origin = metadata$origin,
+                            #   normal_site = metadata$normal_site,
+                             #  col = list(normal_site = normal_pal,
+                             #             treatment = treatment_pal)
+                          )
+
+heatmap <- ComplexHeatmap::Heatmap(mut_mat[mut_order,],
+                        name = "mutation_count",
+                        col = col_fun,
+                        top_annotation = annotation,
+                        cluster_columns = sample_tree,
+                        show_column_names = TRUE,
+                        cluster_rows = FALSE,
+                        row_names_gp = gpar(fontsize = 6),
+                        row_names_side = "left",
+                        column_dend_height = unit(4, "cm"),
+                        column_split = 5,
+                        row_split = factor(c(rep("C>A", 16), 
+                                             rep("C>G", 16),
+                                             rep("C>T", 16),
+                                             rep("T>A", 16),
+                                             rep("T>C", 16),
+                                             rep("T>G", 16)), 
+                                           levels = c("C>A", "C>G", "C>T", "T>A", "T>C", "T>G")))
+
+heatmap <- draw(heatmap, use_raster = TRUE, raster_quality = 5)
+```
+
+```{r mean cluster spectra, fig.height=10, width = 6}
+# extract clusters -------------------------------------------------------------
+cluster <- column_order(heatmap) %>%
+  map_dfr(function(clst){
+    tibble(aliquote_barcode = colnames(mut_mat[clst]))
+  }, .id = "cluster") %>%
+  mutate(cluster = paste0("cluster", cluster))
+
+# create cluster mean mutation spectra -----------------------------------------
+clst_lst <- cluster %>%
+  pull(cluster) %>%
+  unique()
+
+cluster_plot <- map(clst_lst, function(clst){
+  sample_lst <- cluster %>%
+    filter(cluster == clst) %>%
+    pull(aliquote_barcode)
+  
+  mean_clst_profile <- mut_mat %>%
+    rownames_to_column("MutationType") %>%
+    select(MutationType, all_of(sample_lst)) %>%
+    pivot_longer(-MutationType, names_to = "sample", values_to = "count") %>%
+    group_by(MutationType) %>%
+    summarise(!!clst := mean(count))
+
+  # create sigrprofiler profile
+  file_rare_profile <- paste0("data/rare_spectra_", clst, ".tsv")
+  readr::write_tsv(mean_clst_profile, file_rare_profile)
+  SigProfilerPlottingR::plotSBS(file_rare_profile, 
+                                output_path = "data/", 
+                                clst, "96", percentage=TRUE)
+  file.remove(file_rare_profile)
+  
+  # plot profile as placeholder
+  plot <- signatR::plot_spectra(mean_clst_profile, "SBS96", render = FALSE)
+  
+  sample_burden <- mut_burden %>%
+    filter(sample %in% sample_lst)  %>%
+    mutate(mut_count = paste0("(",mut_count," mutations)")) %>%
+    unite("burden", c(sample, mut_count), sep = " ") %>%
+    pull(burden)
+  
+  if(length(sample_burden) < 5){
+    sample_burden <- paste(sample_burden, collapse = "\n")
+  }else{
+    sample_burden <- paste("n =", length(sample_burden))
+  }
+  
+  title <- textGrob(paste0(sample_burden), gp = gpar(fontsize=10))
+  arrangeGrob(title, plot, heights = c(0.1, 0.9))
+})
+
+grid.arrange(grobs = cluster_plot, ncol = 1)
+```
+
